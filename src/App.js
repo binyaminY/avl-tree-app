@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 // ============= AVL TREE IMPLEMENTATION =============
 class AVLNode {
@@ -294,9 +294,7 @@ export default function AVLTreeLearningApp() {
   const [treeBefore, setTreeBefore] = useState(null);
   const [operation, setOperation] = useState(null);
   const [operationValue, setOperationValue] = useState(null);
-  const [correctRotation, setCorrectRotation] = useState(null);
   const [gamePhase, setGamePhase] = useState('operation'); // operation, rotation, result
-  const [selectedRotation, setSelectedRotation] = useState(null);
   const [isCorrect, setIsCorrect] = useState(null);
   const [explanation, setExplanation] = useState(null);
 
@@ -366,13 +364,11 @@ export default function AVLTreeLearningApp() {
     setOperation(isInsert ? 'insert' : 'delete');
     setOperationValue(value);
     setGamePhase('rotation');
-    setSelectedRotation(null);
     setIsCorrect(null);
   };
 
   // Handle rotation selection
   const handleRotationSelect = (rotation) => {
-    setSelectedRotation(rotation);
 
     // Calculate correct rotation
     const testTree = treeBefore.copy();
@@ -396,8 +392,6 @@ export default function AVLTreeLearningApp() {
 
     const unbalanced = findUnbalancedNode(testTree.root);
     const correct = unbalanced ? testTree.getRotationType(unbalanced) : 'None';
-    setCorrectRotation(correct);
-
     const correct_answer = rotation === correct;
     setIsCorrect(correct_answer);
 
@@ -426,7 +420,6 @@ export default function AVLTreeLearningApp() {
     const tree = generateTree();
     setCurrentTree(tree);
     setTreeBefore(tree.copy());
-    setSelectedRotation(null);
     setIsCorrect(null);
     setExplanation(null);
     generateNextOperation(tree);
