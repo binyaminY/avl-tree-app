@@ -32,47 +32,37 @@ class AVLTree {
   rotateRight(y) {
     const x = y.left;
     const T2 = x.right;
-
     x.right = y;
     y.left = T2;
-
     this.updateHeight(y);
     this.updateHeight(x);
-
     return x;
   }
 
   rotateLeft(x) {
     const y = x.right;
     const T2 = y.left;
-
     y.left = x;
     x.right = T2;
-
     this.updateHeight(x);
     this.updateHeight(y);
-
     return y;
   }
 
   getRotationType(node) {
     const balance = this.getBalance(node);
-
     if (balance > 1) {
-      if (this.getBalance(node.left) >= 0) return 'LL';
-      else return 'LR';
+      return this.getBalance(node.left) >= 0 ? 'LL' : 'LR';
     }
     if (balance < -1) {
-      if (this.getBalance(node.right) <= 0) return 'RR';
-      else return 'RL';
+      return this.getBalance(node.right) <= 0 ? 'RR' : 'RL';
     }
     return 'None';
   }
 
   insert(value) {
     const result = {};
-    result.tree = this._insert(this.root, value, result);
-    this.root = result.tree;
+    this.root = this._insert(this.root, value, result);
     return result.nodeAdded;
   }
 
@@ -81,7 +71,6 @@ class AVLTree {
       result.nodeAdded = true;
       return new AVLNode(value);
     }
-
     if (value < node.value) {
       node.left = this._insert(node.left, value, result);
     } else if (value > node.value) {
@@ -90,10 +79,8 @@ class AVLTree {
       result.nodeAdded = false;
       return node;
     }
-
     this.updateHeight(node);
     const balance = this.getBalance(node);
-
     if (balance > 1) {
       if (value < node.left.value) {
         return this.rotateRight(node);
@@ -102,7 +89,6 @@ class AVLTree {
         return this.rotateRight(node);
       }
     }
-
     if (balance < -1) {
       if (value > node.right.value) {
         return this.rotateLeft(node);
@@ -111,14 +97,12 @@ class AVLTree {
         return this.rotateLeft(node);
       }
     }
-
     return node;
   }
 
   delete(value) {
     const result = {};
-    result.tree = this._delete(this.root, value, result);
-    this.root = result.tree;
+    this.root = this._delete(this.root, value, result);
     return result.nodeDeleted;
   }
 
@@ -127,7 +111,6 @@ class AVLTree {
       result.nodeDeleted = false;
       return null;
     }
-
     if (value < node.value) {
       node.left = this._delete(node.left, value, result);
     } else if (value > node.value) {
@@ -136,18 +119,13 @@ class AVLTree {
       result.nodeDeleted = true;
       if (!node.left) return node.right;
       if (!node.right) return node.left;
-
       let minLargerNode = node.right;
       while (minLargerNode.left) minLargerNode = minLargerNode.left;
       node.value = minLargerNode.value;
       node.right = this._delete(node.right, minLargerNode.value, { nodeDeleted: true });
     }
-
-    if (!node) return null;
-
     this.updateHeight(node);
     const balance = this.getBalance(node);
-
     if (balance > 1) {
       if (this.getBalance(node.left) >= 0) {
         return this.rotateRight(node);
@@ -156,7 +134,6 @@ class AVLTree {
         return this.rotateRight(node);
       }
     }
-
     if (balance < -1) {
       if (this.getBalance(node.right) <= 0) {
         return this.rotateLeft(node);
@@ -165,7 +142,6 @@ class AVLTree {
         return this.rotateLeft(node);
       }
     }
-
     return node;
   }
 
@@ -178,12 +154,57 @@ class AVLTree {
     return result;
   }
 
+  // Deep structural clone — preserves exact tree shape
   copy() {
+    const cloneNode = (node) => {
+      if (!node) return null;
+      const n = new AVLNode(node.value);
+      n.height = node.height;
+      n.left = cloneNode(node.left);
+      n.right = cloneNode(node.right);
+      return n;
+    };
     const newTree = new AVLTree();
-    const values = this.toArray();
-    values.forEach(v => {
-      newTree.insert(v);
-    });
+    newTree.root = cloneNode(this.root);
+    return newTree;
+  }
+
+  // BST insert without AVL rebalancing (for showing intermediate unbalanced state)
+  _insertBST(node, value) {
+    if (!node) return new AVLNode(value);
+    if (value < node.value) node.left = this._insertBST(node.left, value);
+    else if (value > node.value) node.right = this._insertBST(node.right, value);
+    this.updateHeight(node);
+    return node;
+  }
+
+  // BST delete without AVL rebalancing
+  _deleteBST(node, value) {
+    if (!node) return null;
+    if (value < node.value) {
+      node.left = this._deleteBST(node.left, value);
+    } else if (value > node.value) {
+      node.right = this._deleteBST(node.right, value);
+    } else {
+      if (!node.left) return node.right;
+      if (!node.right) return node.left;
+      let min = node.right;
+      while (min.left) min = min.left;
+      node.value = min.value;
+      node.right = this._deleteBST(node.right, min.value);
+    }
+    this.updateHeight(node);
+    return node;
+  }
+
+  // Returns a copy of this tree with the operation applied but WITHOUT rebalancing
+  applyOpWithoutBalance(op, value) {
+    const newTree = this.copy();
+    if (op === 'insert') {
+      newTree.root = newTree._insertBST(newTree.root, value);
+    } else {
+      newTree.root = newTree._deleteBST(newTree.root, value);
+    }
     return newTree;
   }
 }
@@ -205,13 +226,8 @@ const TreeVisualization = ({ tree, highlightNode = null, animatingNodes = [], ti
     if (!node) return;
     nodePositions[node.value] = { x, y, height: node.height, balance: tree.getBalance(node) };
     maxY = Math.max(maxY, y);
-
-    if (node.left) {
-      calculatePositions(node.left, x - offset, y + 100, offset / 2);
-    }
-    if (node.right) {
-      calculatePositions(node.right, x + offset, y + 100, offset / 2);
-    }
+    if (node.left) calculatePositions(node.left, x - offset, y + 100, offset / 2);
+    if (node.right) calculatePositions(node.right, x + offset, y + 100, offset / 2);
   };
 
   calculatePositions(tree.root, 300, 40, 120);
@@ -222,10 +238,9 @@ const TreeVisualization = ({ tree, highlightNode = null, animatingNodes = [], ti
     <div className="w-full">
       {title && <h3 className="text-sm font-bold text-gray-700 mb-2">{title}</h3>}
       <svg width="100%" height={svgHeight} viewBox={`0 0 600 ${svgHeight}`} className="border-2 border-blue-200 bg-white rounded-lg">
-        {/* קווים בין צמתים */}
         {Object.entries(nodePositions).map(([val, pos]) => {
-          const value = parseInt(val);
-          let lines = [];
+          const value = parseInt(val, 10);
+          const lines = [];
 
           const findNode = (node) => {
             if (!node) return null;
@@ -246,17 +261,16 @@ const TreeVisualization = ({ tree, highlightNode = null, animatingNodes = [], ti
               <line key={`line-${value}-right`} x1={pos.x} y1={pos.y} x2={childPos.x} y2={childPos.y} stroke="#cbd5e1" strokeWidth="2" />
             );
           }
-
           return lines;
         })}
 
-        {/* צמתים */}
         {Object.entries(nodePositions).map(([val, pos]) => {
-          const value = parseInt(val);
+          const value = parseInt(val, 10);
           const isHighlighted = highlightNode === value;
           const isAnimating = animatingNodes.includes(value);
-          const bgColor = isHighlighted ? '#fbbf24' : isAnimating ? '#34d399' : '#e0e7ff';
-          const borderColor = isHighlighted ? '#d97706' : '#4f46e5';
+          const isUnbalanced = Math.abs(pos.balance) > 1;
+          const bgColor = isHighlighted ? '#fbbf24' : isAnimating ? '#34d399' : isUnbalanced ? '#fca5a5' : '#e0e7ff';
+          const borderColor = isHighlighted ? '#d97706' : isUnbalanced ? '#dc2626' : '#4f46e5';
 
           return (
             <g key={`node-${value}`}>
@@ -266,13 +280,13 @@ const TreeVisualization = ({ tree, highlightNode = null, animatingNodes = [], ti
                 r="28"
                 fill={bgColor}
                 stroke={borderColor}
-                strokeWidth={isHighlighted ? '3' : '2'}
+                strokeWidth={isHighlighted || isUnbalanced ? '3' : '2'}
                 style={{ transition: 'all 0.3s ease' }}
               />
               <text x={pos.x} y={pos.y} textAnchor="middle" dy="0.3em" fontSize="16" fontWeight="bold" fill="#1f2937">
                 {value}
               </text>
-              <text x={pos.x} y={pos.y + 45} textAnchor="middle" fontSize="11" fill="#6b7280">
+              <text x={pos.x} y={pos.y + 45} textAnchor="middle" fontSize="11" fill={isUnbalanced ? '#dc2626' : '#6b7280'}>
                 h:{pos.height} b:{pos.balance}
               </text>
             </g>
@@ -285,16 +299,18 @@ const TreeVisualization = ({ tree, highlightNode = null, animatingNodes = [], ti
 
 // ============= MAIN APP =============
 export default function AVLTreeLearningApp() {
-  const [mode, setMode] = useState('menu'); // menu, learning, gameStart, gaming
+  const [mode, setMode] = useState('menu');
   const [difficulty, setDifficulty] = useState('Beginner');
   const [learningTopic, setLearningTopic] = useState(null);
 
   // Game state
   const [currentTree, setCurrentTree] = useState(null);
   const [treeBefore, setTreeBefore] = useState(null);
+  const [treeIntermediate, setTreeIntermediate] = useState(null);
   const [operation, setOperation] = useState(null);
   const [operationValue, setOperationValue] = useState(null);
-  const [gamePhase, setGamePhase] = useState('operation'); // operation, rotation, result
+  const [correctRotationType, setCorrectRotationType] = useState(null);
+  const [gamePhase, setGamePhase] = useState('rotation');
   const [isCorrect, setIsCorrect] = useState(null);
   const [explanation, setExplanation] = useState(null);
 
@@ -302,58 +318,42 @@ export default function AVLTreeLearningApp() {
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
-  const [rotationStats, setRotationStats] = useState({ LL: { total: 0, correct: 0 }, RR: { total: 0, correct: 0 }, LR: { total: 0, correct: 0 }, RL: { total: 0, correct: 0 }, None: { total: 0, correct: 0 } });
+  const [rotationStats, setRotationStats] = useState({
+    LL: { total: 0, correct: 0 },
+    RR: { total: 0, correct: 0 },
+    LR: { total: 0, correct: 0 },
+    RL: { total: 0, correct: 0 },
+    None: { total: 0, correct: 0 }
+  });
   const [showStats, setShowStats] = useState(false);
 
-  // Generate random tree based on difficulty
-  const generateTree = () => {
+  const generateTree = (diff = difficulty) => {
     const tree = new AVLTree();
     let count;
-
-    switch (difficulty) {
-      case 'Beginner':
-        count = 4 + Math.floor(Math.random() * 3);
-        break;
-      case 'Intermediate':
-        count = 6 + Math.floor(Math.random() * 3);
-        break;
-      case 'Advanced':
-        count = 8 + Math.floor(Math.random() * 4);
-        break;
-      default:
-        count = 5;
+    switch (diff) {
+      case 'Beginner': count = 4 + Math.floor(Math.random() * 3); break;
+      case 'Intermediate': count = 6 + Math.floor(Math.random() * 3); break;
+      case 'Advanced': count = 8 + Math.floor(Math.random() * 4); break;
+      default: count = 5;
     }
-
     const values = new Set();
     while (values.size < count) {
       values.add(Math.floor(Math.random() * 100) + 1);
     }
-
     Array.from(values).forEach(v => tree.insert(v));
     return tree;
   };
 
-  // Start game
-  const startGame = () => {
-    const tree = generateTree();
-    setCurrentTree(tree);
-    setTreeBefore(tree.copy());
-    generateNextOperation(tree);
-    setMode('gaming');
-  };
-
-  // Generate next operation
   const generateNextOperation = (tree) => {
     const isInsert = Math.random() > 0.4;
+    const existing = tree.toArray();
     let value;
 
     if (isInsert) {
-      const existing = tree.toArray();
       do {
         value = Math.floor(Math.random() * 100) + 1;
       } while (existing.includes(value));
     } else {
-      const existing = tree.toArray();
       if (existing.length === 0) {
         generateNextOperation(tree);
         return;
@@ -361,61 +361,75 @@ export default function AVLTreeLearningApp() {
       value = existing[Math.floor(Math.random() * existing.length)];
     }
 
-    setOperation(isInsert ? 'insert' : 'delete');
-    setOperationValue(value);
-    setGamePhase('rotation');
-    setIsCorrect(null);
-  };
+    const op = isInsert ? 'insert' : 'delete';
 
-  // Handle rotation selection
-  const handleRotationSelect = (rotation) => {
+    // Build intermediate tree: BST operation WITHOUT rebalancing
+    // This lets us detect which rotation is actually needed
+    const intermediate = tree.applyOpWithoutBalance(op, value);
 
-    // Calculate correct rotation
-    const testTree = treeBefore.copy();
-    if (operation === 'insert') {
-      testTree.insert(operationValue);
-    } else {
-      testTree.delete(operationValue);
-    }
-
-    setCurrentTree(testTree);
-
-    // Get correct rotation type
+    // Find first unbalanced node (in-order) in the intermediate tree
     const findUnbalancedNode = (node) => {
       if (!node) return null;
       const left = findUnbalancedNode(node.left);
       if (left) return left;
-      const balance = testTree.getBalance(node);
-      if (Math.abs(balance) > 1) return node;
+      if (Math.abs(intermediate.getBalance(node)) > 1) return node;
       return findUnbalancedNode(node.right);
     };
 
-    const unbalanced = findUnbalancedNode(testTree.root);
-    const correct = unbalanced ? testTree.getRotationType(unbalanced) : 'None';
-    const correct_answer = rotation === correct;
-    setIsCorrect(correct_answer);
+    const unbalanced = findUnbalancedNode(intermediate.root);
+    const correct = unbalanced ? intermediate.getRotationType(unbalanced) : 'None';
 
-    // Update stats
+    setOperation(op);
+    setOperationValue(value);
+    setTreeIntermediate(intermediate);
+    setCorrectRotationType(correct);
+    setGamePhase('rotation');
+    setIsCorrect(null);
+  };
+
+  // diff passed directly to avoid stale state from setDifficulty
+  const startGame = (diff = difficulty) => {
+    const tree = generateTree(diff);
+    setCurrentTree(tree);
+    setTreeBefore(tree.copy());
+    generateNextOperation(tree);
+    setMode('gaming');
+  };
+
+  const handleRotationSelect = (rotation) => {
+    // Apply AVL-balanced operation for the result display
+    const balancedTree = treeBefore.copy();
+    if (operation === 'insert') {
+      balancedTree.insert(operationValue);
+    } else {
+      balancedTree.delete(operationValue);
+    }
+    setCurrentTree(balancedTree);
+
+    const isCorrectAnswer = rotation === correctRotationType;
+    setIsCorrect(isCorrectAnswer);
+
     setRotationStats(prev => ({
       ...prev,
-      [correct]: { total: prev[correct].total + 1, correct: prev[correct].correct + (correct_answer ? 1 : 0) }
+      [correctRotationType]: {
+        total: prev[correctRotationType].total + 1,
+        correct: prev[correctRotationType].correct + (isCorrectAnswer ? 1 : 0)
+      }
     }));
 
-    // Update score
-    if (correct_answer) {
+    if (isCorrectAnswer) {
       setScore(prev => prev + (10 + combo * 2));
       setCombo(prev => prev + 1);
-      setExplanation(`✅ כל הכבוד! הרוטציה ${correct} היא הנכונה! (+${10 + combo * 2} נקודות)`);
+      setExplanation(`✅ כל הכבוד! הרוטציה ${correctRotationType} היא הנכונה! (+${10 + combo * 2} נקודות)`);
     } else {
       setCombo(0);
-      setExplanation(`❌ טעות. הרוטציה הנכונה היא ${correct}, לא ${rotation}.`);
+      setExplanation(`❌ טעות. הרוטציה הנכונה היא ${correctRotationType}, לא ${rotation}.`);
     }
 
     setQuestionsAnswered(prev => prev + 1);
     setGamePhase('result');
   };
 
-  // Continue to next question
   const nextQuestion = () => {
     const tree = generateTree();
     setCurrentTree(tree);
@@ -432,12 +446,11 @@ export default function AVLTreeLearningApp() {
         title: 'מה זה עץ AVL?',
         content: `עץ AVL הוא עץ חיפוש בינארי מאוזן עצמית. כל צומת שומרת על איזון על ידי תחזוקת הפרש גבהים בין תת-עץ שמאלי וימני.
 
-קצר לידי עץ AVL מאטו את הפעולות (insert, delete, search) ל-O(log n) גם במקרה הגרוע.
+עצי AVL מבטיחים שפעולות insert, delete, search רצות ב-O(log n) גם במקרה הגרוע.
 
 Balance Factor = גובה תת-עץ שמאלי - גובה תת-עץ ימני
 
-AVL עץ נשאר אם:
-- כל צומת עיל תו גורם איזון בטווח [-1, 1]`
+עץ AVL תקין: לכל צומת, ה-Balance Factor בטווח [-1, 1].`
       },
       balance: {
         title: 'Balance Factor (גורם איזון)',
@@ -446,36 +459,36 @@ BF = height(left) - height(right)
 
 דוגמאות:
 - BF = 0 → עץ מאוזן לחלוטין
-- BF = 1 → עץ שמאל קצת גדול יותר, אבל עדיין מאוזן
-- BF = -1 → עץ ימין קצת גדול יותר, אבל עדיין מאוזן
-- BF = 2 → עץ שאול שמאל בהרבה, צריך רוטציה!
-- BF = -2 → עץ שאול ימין בהרבה, צריך רוטציה!
+- BF = 1 → שמאל קצת גדול יותר, עדיין מאוזן
+- BF = -1 → ימין קצת גדול יותר, עדיין מאוזן
+- BF = 2 → שמאל כבד מדי — צריך רוטציה!
+- BF = -2 → ימין כבד מדי — צריך רוטציה!
 
-רק כשה-BF >= 2 או BF <= -2, אנחנו צריכים לתקן את העץ.`
+הצמתים האדומים בהדמיה מסמנים צמתים לא מאוזנים (|BF| > 1).`
       },
       rotations: {
         title: 'ארבע סוגי הרוטציות',
-        content: `כשעץ מאבד איזון, אנחנו עושים רוטציה:
+        content: `כשעץ מאבד איזון, מבצעים רוטציה:
 
-**LL Rotation (Left-Left)**
-בעיה: צומת שמאלי של צומת שמאלי
-פתרון: סיבוב ימינה של הצומת הלא מאוזן
+LL Rotation (Left-Left)
+הבעיה: הוספה לתת-עץ שמאלי של הבן השמאלי
+הפתרון: סיבוב ימינה של הצומת הלא-מאוזן
 
-**RR Rotation (Right-Right)**
-בעיה: צומת ימני של צומת ימני
-פתרון: סיבוב שמאלה של הצומת הלא מאוזן
+RR Rotation (Right-Right)
+הבעיה: הוספה לתת-עץ ימני של הבן הימני
+הפתרון: סיבוב שמאלה של הצומת הלא-מאוזן
 
-**LR Rotation (Left-Right)**
-בעיה: צומת ימני של צומת שמאלי
-פתרון: סיבוב שמאלה של הצומת השמאלי, ואז סיבוב ימינה של הצומת הלא מאוזן
+LR Rotation (Left-Right)
+הבעיה: הוספה לתת-עץ ימני של הבן השמאלי
+הפתרון: סיבוב שמאלה של הבן השמאלי, ואז סיבוב ימינה
 
-**RL Rotation (Right-Left)**
-בעיה: צומת שמאלי של צומת ימני
-פתרון: סיבוב ימינה של הצומת הימני, ואז סיבוב שמאלה של הצומת הלא מאוזן`
+RL Rotation (Right-Left)
+הבעיה: הוספה לתת-עץ שמאלי של הבן הימני
+הפתרון: סיבוב ימינה של הבן הימני, ואז סיבוב שמאלה`
       },
       examples: {
         title: 'דוגמאות אינטראקטיביות',
-        content: 'בדוק כמה דוגמאות ללמוד איך הרוטציות עובדות!'
+        content: 'בדוק כמה דוגמאות ולמד איך הרוטציות עובדות!'
       }
     };
 
@@ -583,7 +596,7 @@ BF = height(left) - height(right)
                       setCombo(0);
                       setQuestionsAnswered(0);
                       setRotationStats({ LL: { total: 0, correct: 0 }, RR: { total: 0, correct: 0 }, LR: { total: 0, correct: 0 }, RL: { total: 0, correct: 0 }, None: { total: 0, correct: 0 } });
-                      startGame();
+                      startGame(diff);
                     }}
                     className={`p-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition border-4 ${
                       difficulty === diff ? 'bg-gradient-to-br from-yellow-300 to-orange-300 border-orange-600' : 'bg-white border-gray-300'
@@ -594,7 +607,9 @@ BF = height(left) - height(right)
                       {diff === 'Intermediate' && '🌿'}
                       {diff === 'Advanced' && '🌳'}
                     </div>
-                    <h3 className="text-xl font-bold text-gray-800">{diff === 'Beginner' ? 'מתחיל' : diff === 'Intermediate' ? 'בינוני' : 'מתקדם'}</h3>
+                    <h3 className="text-xl font-bold text-gray-800">
+                      {diff === 'Beginner' ? 'מתחיל' : diff === 'Intermediate' ? 'בינוני' : 'מתקדם'}
+                    </h3>
                   </button>
                 ))}
               </div>
@@ -627,16 +642,19 @@ BF = height(left) - height(right)
               </div>
             </div>
 
-            {/* Game Content */}
+            {/* ROTATION PHASE — shows tree before op and unbalanced intermediate */}
             {gamePhase === 'rotation' && (
               <div className="bg-white rounded-2xl shadow-xl p-8">
-                <h2 className="text-2xl font-bold text-center mb-6">
+                <h2 className="text-2xl font-bold text-center mb-2">
                   {operation === 'insert' ? `➕ הוסף ${operationValue}` : `➖ הסר ${operationValue}`}
                 </h2>
+                <p className="text-center text-gray-500 mb-6 text-sm">
+                  הצמתים האדומים מסמנים אי-איזון (|BF| &gt; 1)
+                </p>
 
                 <div className="grid grid-cols-2 gap-6 mb-8">
-                  <TreeVisualization tree={treeBefore} title="העץ לפני" />
-                  <TreeVisualization tree={currentTree} title="העץ אחרי (לפני רוטציה)" />
+                  <TreeVisualization tree={treeBefore} title="העץ לפני הפעולה" />
+                  <TreeVisualization tree={treeIntermediate} title="אחרי הפעולה (לפני רוטציה)" />
                 </div>
 
                 <div className="text-center">
@@ -656,6 +674,7 @@ BF = height(left) - height(right)
               </div>
             )}
 
+            {/* RESULT PHASE — shows before and after (balanced) */}
             {gamePhase === 'result' && (
               <div className="bg-white rounded-2xl shadow-xl p-8">
                 <h2 className={`text-3xl font-bold text-center mb-6 ${isCorrect ? 'text-green-600' : 'text-red-600'}`}>
@@ -665,8 +684,8 @@ BF = height(left) - height(right)
                 <p className="text-lg text-center text-gray-700 mb-6">{explanation}</p>
 
                 <div className="grid grid-cols-2 gap-6 mb-8">
-                  <TreeVisualization tree={treeBefore} title="העץ המקורי" />
-                  <TreeVisualization tree={currentTree} title="העץ המאוזן" />
+                  <TreeVisualization tree={treeBefore} title="העץ לפני" />
+                  <TreeVisualization tree={currentTree} title="העץ המאוזן אחרי הפעולה" />
                 </div>
 
                 <div className="text-center">
@@ -680,8 +699,14 @@ BF = height(left) - height(right)
               </div>
             )}
 
-            {/* Stats Button */}
-            <div className="text-center mt-8">
+            {/* Bottom controls */}
+            <div className="flex justify-between items-center mt-8">
+              <button
+                onClick={() => setMode('menu')}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+              >
+                ← חזור לתפריט
+              </button>
               <button
                 onClick={() => setShowStats(!showStats)}
                 className="px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-bold"
@@ -701,25 +726,10 @@ BF = height(left) - height(right)
                       <div key={rot} className="bg-gradient-to-br from-blue-50 to-purple-50 p-4 rounded-lg text-center">
                         <p className="font-bold text-lg mb-2">{rot}</p>
                         <p className="text-2xl font-bold text-blue-600">{percentage}%</p>
-                        <p className="text-sm text-gray-600">
-                          {stat.correct}/{stat.total}
-                        </p>
+                        <p className="text-sm text-gray-600">{stat.correct}/{stat.total}</p>
                       </div>
                     );
                   })}
-                </div>
-                <div className="mt-6 text-center">
-                  <button
-                    onClick={() => {
-                      setMode('menu');
-                      setQuestionsAnswered(0);
-                      setScore(0);
-                      setCombo(0);
-                    }}
-                    className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-bold"
-                  >
-                    ← חזור לתפריט
-                  </button>
                 </div>
               </div>
             )}
