@@ -237,13 +237,14 @@ const TreeVisualization = ({ tree, title, highlightValue = null }) => {
   return (
     <div className="w-full">
       {title && <h3 className="text-sm font-bold text-gray-700 mb-2">{title}</h3>}
-      <div className="overflow-x-auto">
-        <svg
-          width={SVG_W}
-          height={SVG_H}
-          className="border-2 border-blue-200 bg-white rounded-lg"
-          style={{ minWidth: '100%' }}
-        >
+      {/* viewBox + width:100% scales the whole diagram to fit its container —
+          the full tree is always visible, never clipped, just smaller on narrow screens */}
+      <svg
+        viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="border-2 border-blue-200 bg-white rounded-lg w-full block mx-auto"
+        style={{ maxWidth: `${SVG_W}px`, height: 'auto' }}
+      >
           {/* Edges first so nodes render on top */}
           {edges.map(e => (
             <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" />
@@ -285,8 +286,7 @@ const TreeVisualization = ({ tree, title, highlightValue = null }) => {
               </g>
             );
           })}
-        </svg>
-      </div>
+      </svg>
     </div>
   );
 };
@@ -482,8 +482,13 @@ const RotationAnimator = () => {
       <h4 className="text-lg font-bold text-center text-gray-800 mb-1">{info.title}</h4>
       <p className="text-sm text-center text-gray-600 mb-4 max-w-xl mx-auto">{info.desc}</p>
 
-      <div className="flex justify-center mb-4 overflow-x-auto">
-        <svg width={svgWidth} height={svgHeight} className="bg-white rounded-lg border-2 border-blue-200 flex-shrink-0">
+      <div className="mb-4">
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="bg-white rounded-lg border-2 border-blue-200 w-full block mx-auto"
+          style={{ maxWidth: `${svgWidth}px`, height: 'auto' }}
+        >
           {edges.map(e => (
             <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" style={posTransition} />
           ))}
