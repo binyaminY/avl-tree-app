@@ -715,29 +715,37 @@ function buildRealRotationSequence(intermediateTree, pivotValue, rotationType) {
   return { sequence, pivots };
 }
 
-const ROTATION_STEP_DURATION_MS = 1100;
+const ROTATION_STEP_DURATION_MS = 1200;
 
-const RealRotationAnimator = ({ intermediateTree, pivotValue, rotationType }) => {
+function depthMapFor(tree) {
+  const d = {};
+  const assign = (node, depth) => {
+    if (!node) return;
+    d[node.value] = depth;
+    assign(node.left, depth + 1);
+    assign(node.right, depth + 1);
+  };
+  assign(tree.root, 0);
+  return d;
+}
+
+// Full story, one continuous animation: original tree -> leaf inserted/removed
+// (unbalanced) -> rotation sub-step(s) -> final balanced tree. Replaces the
+// earlier version that stopped right after showing the leaf change.
+const RealRotationAnimator = ({ treeBefore, intermediateTree, pivotValue, rotationType, operation, operationValue }) => {
   const [stepIdx, setStepIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const timeoutsRef = React.useRef([]);
 
-  const { sequence, pivots } = React.useMemo(
-    () => (intermediateTree ? buildRealRotationSequence(intermediateTree, pivotValue, rotationType) : { sequence: [], pivots: [] }),
-    [intermediateTree, pivotValue, rotationType]
-  );
+  const { sequence, pivots } = React.useMemo(() => {
+    if (!treeBefore || !intermediateTree) return { sequence: [], pivots: [] };
+    const { sequence: rotSeq, pivots: rotPivots } = buildRealRotationSequence(intermediateTree, pivotValue, rotationType);
+    return { sequence: [treeBefore, ...rotSeq], pivots: [null, ...rotPivots] };
+  }, [treeBefore, intermediateTree, pivotValue, rotationType]);
 
   React.useEffect(() => () => timeoutsRef.current.forEach(clearTimeout), []);
 
-  if (!intermediateTree || sequence.length === 0) return null;
-
-  if (rotationType === 'None' || sequence.length === 1) {
-    return (
-      <div className="mt-4 text-center text-sm text-gray-500 bg-gray-50 rounded-lg py-3">
-        ⚖️ העץ נשאר מאוזן — לא נדרשה שום רוטציה.
-      </div>
-    );
-  }
+  if (sequence.length === 0) return null;
 
   const play = () => {
     timeoutsRef.current.forEach(clearTimeout);
@@ -750,46 +758,67 @@ const RealRotationAnimator = ({ intermediateTree, pivotValue, rotationType }) =>
     timeoutsRef.current.push(setTimeout(() => setPlaying(false), sequence.length * ROTATION_STEP_DURATION_MS));
   };
 
-  // Rotation never adds/removes values, so rank (x) is identical at every step
-  const sortedValues = sequence[0].toArray();
-  const n = sortedValues.length;
+  // Union across the WHOLE story: only the before->intermediate transition
+  // ever adds/removes a value (the insert/delete itself); every later
+  // rotation step keeps the same value set. One union handles both cases.
+  const unionValues = Array.from(new Set(sequence.flatMap(s => s.toArray()))).sort((a, b) => a - b);
+  const n = unionValues.length;
   const SPACING = Math.max(55, Math.min(85, 480 / Math.max(n - 1, 1)));
-  const xMap = {};
-  sortedValues.forEach((v, i) => { xMap[v] = 30 + i * SPACING + SPACING / 2; });
-
-  const currentTree = sequence[stepIdx];
   const LEVEL_H = 78;
-  const depthMap = {};
-  const assignDepth = (node, d) => {
-    if (!node) return;
-    depthMap[node.value] = d;
-    assignDepth(node.left, d + 1);
-    assignDepth(node.right, d + 1);
-  };
-  assignDepth(currentTree.root, 0);
+  const xMap = {};
+  unionValues.forEach((v, i) => { xMap[v] = 30 + i * SPACING + SPACING / 2; });
 
-  const maxDepth = Math.max(0, ...Object.values(depthMap));
+  const depthMaps = sequence.map(depthMapFor);
+  const currentTree = sequence[stepIdx];
+  const currentDepth = depthMaps[stepIdx];
+
+  // A value missing at this step (about to appear, or just vanished) keeps
+  // the depth from the nearest step where it DOES exist, so it fades in/out
+  // in place instead of jumping from nowhere.
+  const fallbackDepth = (v) => {
+    for (let d = 1; d < sequence.length; d++) {
+      if (stepIdx - d >= 0 && depthMaps[stepIdx - d][v] !== undefined) return depthMaps[stepIdx - d][v];
+      if (stepIdx + d < sequence.length && depthMaps[stepIdx + d][v] !== undefined) return depthMaps[stepIdx + d][v];
+    }
+    return 0;
+  };
+
+  const maxDepth = Math.max(0, ...depthMaps.flatMap(d => Object.values(d)));
   const svgWidth = n * SPACING + 60;
   const svgHeight = maxDepth * LEVEL_H + 120;
 
   const edges = [];
   const collectEdges = (node) => {
     if (!node) return;
-    const py = 40 + depthMap[node.value] * LEVEL_H;
+    const py = 40 + currentDepth[node.value] * LEVEL_H;
     if (node.left) {
-      edges.push({ key: `${node.value}-L`, x1: xMap[node.value], y1: py, x2: xMap[node.left.value], y2: 40 + depthMap[node.left.value] * LEVEL_H });
+      edges.push({ key: `${node.value}-L`, x1: xMap[node.value], y1: py, x2: xMap[node.left.value], y2: 40 + currentDepth[node.left.value] * LEVEL_H });
       collectEdges(node.left);
     }
     if (node.right) {
-      edges.push({ key: `${node.value}-R`, x1: xMap[node.value], y1: py, x2: xMap[node.right.value], y2: 40 + depthMap[node.right.value] * LEVEL_H });
+      edges.push({ key: `${node.value}-R`, x1: xMap[node.value], y1: py, x2: xMap[node.right.value], y2: 40 + currentDepth[node.right.value] * LEVEL_H });
       collectEdges(node.right);
     }
   };
   collectEdges(currentTree.root);
 
   const pivot = pivots[stepIdx];
-  const t = { transition: 'cx 0.6s ease, cy 0.6s ease, x 0.6s ease, y 0.6s ease, x1 0.6s ease, y1 0.6s ease, x2 0.6s ease, y2 0.6s ease' };
-  const stepCount = sequence.length;
+  const isLastStep = stepIdx === sequence.length - 1;
+  const t = { transition: 'cx 0.6s ease, cy 0.6s ease, x 0.6s ease, y 0.6s ease, x1 0.6s ease, y1 0.6s ease, x2 0.6s ease, y2 0.6s ease, opacity 0.5s ease' };
+
+  const opWord = operation === 'insert' ? 'הוספת' : 'הסרת';
+  let stepLabel;
+  if (stepIdx === 0) {
+    stepLabel = `העץ המקורי — לפני ${opWord} ${operationValue}`;
+  } else if (stepIdx === 1) {
+    stepLabel = rotationType === 'None'
+      ? `${operationValue} ${operation === 'insert' ? 'נוסף' : 'הוסר'} — העץ נשאר מאוזן!`
+      : `${operationValue} ${operation === 'insert' ? 'נוסף' : 'הוסר'} — לא מאוזן (פיבוט: ${pivot})`;
+  } else if (isLastStep) {
+    stepLabel = '✅ מאוזן!';
+  } else {
+    stepLabel = `מסתובב סביב ${pivot}...`;
+  }
 
   return (
     <div className="mt-4">
@@ -801,17 +830,9 @@ const RealRotationAnimator = ({ intermediateTree, pivotValue, rotationType }) =>
             playing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800'
           }`}
         >
-          {playing ? '⏳ מנפיש...' : '▶ צפה בתהליך הרוטציה'}
+          {playing ? '⏳ מנפיש...' : '▶ צפה בתהליך המלא'}
         </button>
-        <p className="text-xs text-gray-500 mt-2">
-          {stepIdx === 0
-            ? `לפני רוטציה — הצומת הצהוב (${pivot}) הוא הלא-מאוזן`
-            : stepCount === 2
-              ? 'אחרי הרוטציה — מאוזן!'
-              : stepIdx === 1
-                ? `שלב 1/2 — סיבוב סביב ${pivot}`
-                : 'שלב 2/2 — מאוזן!'}
-        </p>
+        <p className="text-xs text-gray-500 mt-2">{stepLabel}</p>
       </div>
       <svg
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -822,13 +843,18 @@ const RealRotationAnimator = ({ intermediateTree, pivotValue, rotationType }) =>
         {edges.map(e => (
           <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" style={t} />
         ))}
-        {sortedValues.map(v => {
+        {unionValues.map(v => {
+          const inCurrent = currentDepth[v] !== undefined;
+          const depth = inCurrent ? currentDepth[v] : fallbackDepth(v);
           const x = xMap[v];
-          const y = 40 + depthMap[v] * LEVEL_H;
-          const isPivot = v === pivot;
+          const y = 40 + depth * LEVEL_H;
+          const isPivot = inCurrent && v === pivot;
+          const isChanged = v === operationValue && stepIdx <= 1;
+          const fill = isPivot ? '#fde68a' : isChanged ? '#86efac' : '#e0e7ff';
+          const stroke = isPivot ? '#d97706' : isChanged ? '#16a34a' : '#4f46e5';
           return (
-            <g key={v}>
-              <circle cx={x} cy={y} r="24" fill={isPivot ? '#fde68a' : '#e0e7ff'} stroke={isPivot ? '#d97706' : '#4f46e5'} strokeWidth={isPivot ? '3' : '2'} style={t} />
+            <g key={v} style={{ ...t, opacity: inCurrent ? 1 : 0 }}>
+              <circle cx={x} cy={y} r="24" fill={fill} stroke={stroke} strokeWidth={isPivot || isChanged ? '3' : '2'} style={t} />
               <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="14" fontWeight="bold" fill="#1f2937" style={t}>{v}</text>
             </g>
           );
@@ -1289,9 +1315,12 @@ RL (Right-Left)
                 </div>
 
                 <RealRotationAnimator
+                  treeBefore={treeBefore}
                   intermediateTree={treeIntermediate}
                   pivotValue={pivotValue}
                   rotationType={correctRotationType}
+                  operation={operation}
+                  operationValue={operationValue}
                 />
 
                 <div className="text-center mt-6">
