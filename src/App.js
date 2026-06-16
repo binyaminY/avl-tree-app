@@ -533,6 +533,122 @@ const RotationAnimator = () => {
   );
 };
 
+// ============= TREE TRANSITION ANIMATOR =============
+// Animates a real (non-fixed) tree transitioning from one state to another —
+// used to "watch" the actual insert/delete happen, and later the actual
+// rotation fix happen, on the real numbers of the current question.
+// Columns are assigned by sorted rank over the UNION of values in both
+// trees, so a node added/removed shifts neighboring columns exactly like
+// a real in-order re-layout would; a value missing from one side fades
+// in/out in place instead of jumping from nowhere.
+const TreeTransitionAnimator = ({ fromTree, toTree, highlightValue, label }) => {
+  const [phase, setPhase] = useState('from'); // 'from' | 'to'
+  const [playing, setPlaying] = useState(false);
+  const timeoutRef = React.useRef(null);
+
+  React.useEffect(() => () => clearTimeout(timeoutRef.current), []);
+
+  if (!fromTree || !toTree) return null;
+
+  const play = () => {
+    clearTimeout(timeoutRef.current);
+    setPhase('from');
+    setPlaying(true);
+    timeoutRef.current = setTimeout(() => {
+      setPhase('to');
+      timeoutRef.current = setTimeout(() => setPlaying(false), 700);
+    }, 500);
+  };
+
+  const depthMapFor = (tree) => {
+    const d = {};
+    const assign = (node, depth) => {
+      if (!node) return;
+      d[node.value] = depth;
+      assign(node.left, depth + 1);
+      assign(node.right, depth + 1);
+    };
+    assign(tree.root, 0);
+    return d;
+  };
+
+  const fromDepth = depthMapFor(fromTree);
+  const toDepth = depthMapFor(toTree);
+  const unionValues = Array.from(new Set([...fromTree.toArray(), ...toTree.toArray()])).sort((a, b) => a - b);
+
+  const n = unionValues.length;
+  const SPACING = Math.max(60, Math.min(90, 480 / Math.max(n - 1, 1)));
+  const LEVEL_H = 80;
+  const svgWidth = n * SPACING + 60;
+  const maxDepth = Math.max(0, ...Object.values(fromDepth), ...Object.values(toDepth));
+  const svgHeight = maxDepth * LEVEL_H + 120;
+
+  const colX = (i) => 30 + i * SPACING + SPACING / 2;
+
+  const currentTree = phase === 'from' ? fromTree : toTree;
+  const currentDepth = phase === 'from' ? fromDepth : toDepth;
+  const otherDepth = phase === 'from' ? toDepth : fromDepth;
+
+  const nodeRender = unionValues.map((v, i) => {
+    const inCurrent = currentDepth[v] !== undefined;
+    const depth = inCurrent ? currentDepth[v] : otherDepth[v];
+    return { v, x: colX(i), y: 40 + depth * LEVEL_H, opacity: inCurrent ? 1 : 0 };
+  });
+
+  const xOf = (v) => colX(unionValues.indexOf(v));
+  const edges = [];
+  const collectEdges = (node) => {
+    if (!node) return;
+    const py = 40 + currentDepth[node.value] * LEVEL_H;
+    if (node.left) {
+      edges.push({ key: `${node.value}-L`, x1: xOf(node.value), y1: py, x2: xOf(node.left.value), y2: 40 + currentDepth[node.left.value] * LEVEL_H });
+      collectEdges(node.left);
+    }
+    if (node.right) {
+      edges.push({ key: `${node.value}-R`, x1: xOf(node.value), y1: py, x2: xOf(node.right.value), y2: 40 + currentDepth[node.right.value] * LEVEL_H });
+      collectEdges(node.right);
+    }
+  };
+  collectEdges(currentTree.root);
+
+  const t = { transition: 'cx 0.6s ease, cy 0.6s ease, x 0.6s ease, y 0.6s ease, x1 0.6s ease, y1 0.6s ease, x2 0.6s ease, y2 0.6s ease, opacity 0.5s ease' };
+
+  return (
+    <div className="mt-4">
+      <div className="text-center mb-2">
+        <button
+          onClick={play}
+          disabled={playing}
+          className={`px-5 py-2 rounded-lg font-bold text-white text-sm transition ${
+            playing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800'
+          }`}
+        >
+          {playing ? '⏳ מנפיש...' : `▶ ${label}`}
+        </button>
+      </div>
+      <svg
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="bg-white rounded-lg border-2 border-indigo-200 w-full block mx-auto"
+        style={{ maxWidth: `${svgWidth}px`, height: 'auto' }}
+      >
+        {edges.map(e => (
+          <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" style={t} />
+        ))}
+        {nodeRender.map(({ v, x, y, opacity }) => {
+          const isHL = v === highlightValue;
+          return (
+            <g key={v} style={{ ...t, opacity }}>
+              <circle cx={x} cy={y} r="24" fill={isHL ? '#86efac' : '#e0e7ff'} stroke={isHL ? '#16a34a' : '#4f46e5'} strokeWidth={isHL ? '3' : '2'} style={t} />
+              <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="14" fontWeight="bold" fill="#1f2937" style={t}>{v}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
 // ============= HELP MODAL (rotation cheat-sheet, reachable mid-game) =============
 const HelpModal = ({ onClose }) => (
   <div
@@ -935,7 +1051,14 @@ RL (Right-Left)
                   />
                 </div>
 
-                <div className="text-center">
+                <TreeTransitionAnimator
+                  fromTree={treeBefore}
+                  toTree={treeIntermediate}
+                  highlightValue={operationValue}
+                  label="צפה בפעולה"
+                />
+
+                <div className="text-center mt-6">
                   <div className="flex items-center justify-center gap-2 mb-4">
                     <p className="text-lg font-bold text-gray-800">איזו רוטציה נדרשת?</p>
                     <button
@@ -974,7 +1097,14 @@ RL (Right-Left)
                   <TreeVisualization tree={treeAfter} title="אחרי (מאוזן)" />
                 </div>
 
-                <div className="text-center">
+                <TreeTransitionAnimator
+                  fromTree={treeIntermediate}
+                  toTree={treeAfter}
+                  highlightValue={null}
+                  label="צפה בתיקון (הרוטציה בפעולה)"
+                />
+
+                <div className="text-center mt-6">
                   <button
                     onClick={nextQuestion}
                     className="px-8 py-4 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-xl hover:from-green-600 hover:to-green-800 font-bold text-lg transform hover:scale-105 transition shadow-md"
