@@ -289,6 +289,243 @@ const TreeVisualization = ({ tree, title, highlightValue = null }) => {
   );
 };
 
+// ============= ROTATION ANIMATION DEMO =============
+// Fixed, minimal textbook examples for each rotation type. Each example
+// uses the same 3 values {10,20,30}, so the in-order rank (and therefore
+// x-position) of every value is identical before/after rotation — only
+// depth (y-position) changes, which makes a smooth CSS-transition animation
+// trivial: nodes visibly slide into their new position instead of jumping.
+const ROTATION_INFO = {
+  LL: {
+    title: 'LL — סיבוב ימינה (Right Rotation)',
+    desc: 'הוספה בתת-העץ השמאלי של הבן השמאלי. הצומת 30 הופך לא-מאוזן (BF=2) והבן השמאלי (20) אינו right-heavy. תיקון: סיבוב ימינה יחיד על 30.',
+    before: { value: 30, left: { value: 20, left: { value: 10 } } },
+    steps: [
+      { label: '1. העץ לא מאוזן (BF של 30 = 2)', pivot: 30 },
+      { label: '2. סיבוב ימינה על 30 — מאוזן!', pivot: 30 },
+    ],
+  },
+  RR: {
+    title: 'RR — סיבוב שמאלה (Left Rotation)',
+    desc: 'הוספה בתת-העץ הימני של הבן הימני. הצומת 10 הופך לא-מאוזן (BF=-2) והבן הימני (20) אינו left-heavy. תיקון: סיבוב שמאלה יחיד על 10.',
+    before: { value: 10, right: { value: 20, right: { value: 30 } } },
+    steps: [
+      { label: '1. העץ לא מאוזן (BF של 10 = -2)', pivot: 10 },
+      { label: '2. סיבוב שמאלה על 10 — מאוזן!', pivot: 10 },
+    ],
+  },
+  LR: {
+    title: 'LR — סיבוב שמאלה, ואז ימינה',
+    desc: 'הוספה בתת-העץ הימני של הבן השמאלי. הצומת 30 הופך לא-מאוזן והבן השמאלי (10) הוא right-heavy. תיקון: סיבוב שמאלה על 10, ואז ימינה על 30.',
+    before: { value: 30, left: { value: 10, right: { value: 20 } } },
+    steps: [
+      { label: '1. העץ לא מאוזן (BF של 30 = 2)', pivot: 30 },
+      { label: '2. שלב א׳: סיבוב שמאלה על 10', pivot: 10 },
+      { label: '3. שלב ב׳: סיבוב ימינה על 30 — מאוזן!', pivot: 30 },
+    ],
+  },
+  RL: {
+    title: 'RL — סיבוב ימינה, ואז שמאלה',
+    desc: 'הוספה בתת-העץ השמאלי של הבן הימני. הצומת 10 הופך לא-מאוזן והבן הימני (30) הוא left-heavy. תיקון: סיבוב ימינה על 30, ואז שמאלה על 10.',
+    before: { value: 10, right: { value: 30, left: { value: 20 } } },
+    steps: [
+      { label: '1. העץ לא מאוזן (BF של 10 = -2)', pivot: 10 },
+      { label: '2. שלב א׳: סיבוב ימינה על 30', pivot: 30 },
+      { label: '3. שלב ב׳: סיבוב שמאלה על 10 — מאוזן!', pivot: 10 },
+    ],
+  },
+};
+
+function buildExampleTree(structure) {
+  const build = (node) => {
+    if (!node) return null;
+    const n = new AVLNode(node.value);
+    n.left = build(node.left);
+    n.right = build(node.right);
+    return n;
+  };
+  const t = new AVLTree();
+  t.root = build(structure);
+  const computeHeights = (node) => {
+    if (!node) return 0;
+    const lh = computeHeights(node.left);
+    const rh = computeHeights(node.right);
+    node.height = Math.max(lh, rh) + 1;
+    return node.height;
+  };
+  computeHeights(t.root);
+  return t;
+}
+
+// Builds the full before → (intermediate) → after sequence of tree states
+function buildRotationSequence(type) {
+  const before = buildExampleTree(ROTATION_INFO[type].before);
+  const sequence = [before];
+
+  if (type === 'LL') {
+    const t = before.copy();
+    t.root = t.rotateRight(t.root);
+    sequence.push(t);
+  } else if (type === 'RR') {
+    const t = before.copy();
+    t.root = t.rotateLeft(t.root);
+    sequence.push(t);
+  } else if (type === 'LR') {
+    const t1 = before.copy();
+    t1.root.left = t1.rotateLeft(t1.root.left);
+    sequence.push(t1);
+    const t2 = t1.copy();
+    t2.root = t2.rotateRight(t2.root);
+    sequence.push(t2);
+  } else if (type === 'RL') {
+    const t1 = before.copy();
+    t1.root.right = t1.rotateRight(t1.root.right);
+    sequence.push(t1);
+    const t2 = t1.copy();
+    t2.root = t2.rotateLeft(t2.root);
+    sequence.push(t2);
+  }
+
+  return sequence;
+}
+
+const ROTATION_TYPES = ['LL', 'RR', 'LR', 'RL'];
+const STEP_DURATION_MS = 1100;
+
+const RotationAnimator = () => {
+  const [type, setType] = useState('LL');
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const timeoutsRef = React.useRef([]);
+
+  const info = ROTATION_INFO[type];
+  const sequence = React.useMemo(() => buildRotationSequence(type), [type]);
+
+  const clearTimers = () => {
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+  };
+  React.useEffect(() => clearTimers, []);
+
+  const selectType = (t) => {
+    clearTimers();
+    setType(t);
+    setStepIdx(0);
+    setPlaying(false);
+  };
+
+  const play = () => {
+    clearTimers();
+    setStepIdx(0);
+    setPlaying(true);
+    for (let i = 1; i < sequence.length; i++) {
+      timeoutsRef.current.push(setTimeout(() => setStepIdx(i), i * STEP_DURATION_MS));
+    }
+    timeoutsRef.current.push(setTimeout(() => setPlaying(false), sequence.length * STEP_DURATION_MS));
+  };
+
+  const currentTree = sequence[stepIdx];
+
+  // x is fixed per value (sorted rank never changes across steps); only depth (y) animates
+  const sortedValues = sequence[0].toArray();
+  const xMap = {};
+  sortedValues.forEach((v, i) => { xMap[v] = 70 + i * 110; });
+
+  const depthMap = {};
+  const assignDepth = (node, d) => {
+    if (!node) return;
+    depthMap[node.value] = d;
+    assignDepth(node.left, d + 1);
+    assignDepth(node.right, d + 1);
+  };
+  assignDepth(currentTree.root, 0);
+
+  const pivot = info.steps[stepIdx]?.pivot;
+  const svgWidth = sortedValues.length * 110 + 20;
+  const svgHeight = 280;
+
+  const edges = [];
+  const collectEdges = (node) => {
+    if (!node) return;
+    const py = 40 + depthMap[node.value] * 90;
+    if (node.left) {
+      edges.push({ key: `${node.value}-${node.left.value}`, x1: xMap[node.value], y1: py, x2: xMap[node.left.value], y2: 40 + depthMap[node.left.value] * 90 });
+      collectEdges(node.left);
+    }
+    if (node.right) {
+      edges.push({ key: `${node.value}-${node.right.value}`, x1: xMap[node.value], y1: py, x2: xMap[node.right.value], y2: 40 + depthMap[node.right.value] * 90 });
+      collectEdges(node.right);
+    }
+  };
+  collectEdges(currentTree.root);
+
+  const posTransition = { transition: 'cx 0.6s ease, cy 0.6s ease, x 0.6s ease, y 0.6s ease, x1 0.6s ease, y1 0.6s ease, x2 0.6s ease, y2 0.6s ease' };
+
+  return (
+    <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-6 mt-6">
+      <div className="flex flex-wrap justify-center gap-2 mb-4">
+        {ROTATION_TYPES.map(t => (
+          <button
+            key={t}
+            onClick={() => selectType(t)}
+            className={`px-5 py-2 rounded-lg font-bold transition ${
+              type === t ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 border-2 border-blue-300 hover:bg-blue-50'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <h4 className="text-lg font-bold text-center text-gray-800 mb-1">{info.title}</h4>
+      <p className="text-sm text-center text-gray-600 mb-4 max-w-xl mx-auto">{info.desc}</p>
+
+      <div className="flex justify-center mb-4">
+        <svg width={svgWidth} height={svgHeight} className="bg-white rounded-lg border-2 border-blue-200">
+          {edges.map(e => (
+            <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" style={posTransition} />
+          ))}
+          {sortedValues.map(v => {
+            const x = xMap[v];
+            const y = 40 + depthMap[v] * 90;
+            const isPivot = v === pivot;
+            return (
+              <g key={v}>
+                <circle
+                  cx={x} cy={y} r="26"
+                  fill={isPivot ? '#fde68a' : '#e0e7ff'}
+                  stroke={isPivot ? '#d97706' : '#4f46e5'}
+                  strokeWidth={isPivot ? '3' : '2'}
+                  style={posTransition}
+                />
+                <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="bold" fill="#1f2937" style={posTransition}>
+                  {v}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      <p className="text-center text-sm font-semibold text-gray-700 mb-4 h-5">
+        {info.steps[stepIdx]?.label}
+      </p>
+
+      <div className="text-center">
+        <button
+          onClick={play}
+          disabled={playing}
+          className={`px-6 py-3 rounded-xl font-bold text-white transition ${
+            playing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800'
+          }`}
+        >
+          {playing ? '⏳ מנפיש...' : '▶ הפעל אנימציה'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ============= MAIN APP =============
 const EMPTY_STATS = {
   LL: { total: 0, correct: 0 },
@@ -477,6 +714,7 @@ RL (Right-Left)
           <h2 className="text-2xl font-bold text-blue-900">{topic?.title}</h2>
         </div>
         <pre className="text-gray-700 whitespace-pre-wrap leading-relaxed font-sans text-base mb-4">{topic?.content}</pre>
+        {learningTopic === 'rotations' && <RotationAnimator />}
         {learningTopic === 'examples' && (
           <button onClick={() => setMode('gameStart')} className="mt-4 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-bold">
             🎮 התחל משחק
