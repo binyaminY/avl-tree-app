@@ -649,6 +649,195 @@ const TreeTransitionAnimator = ({ fromTree, toTree, highlightValue, label }) => 
   );
 };
 
+// ============= REAL ROTATION PROCESS ANIMATOR =============
+// Unlike TreeTransitionAnimator (one before/after fade), this performs the
+// ACTUAL rotation(s) AVL would apply — using the real pivot node and the
+// real rotateLeft/rotateRight methods — and steps through every sub-rotation
+// (LR/RL are two steps) on THIS question's tree, not a fixed example.
+// Rotation never changes which values exist, only their structure, so the
+// sorted rank (x-position) of every value is identical across all steps —
+// only depth (y) changes, exactly like the textbook RotationAnimator.
+
+function findParentLink(root, targetValue) {
+  if (!root) return null;
+  if (root.left && root.left.value === targetValue) return { parent: root, side: 'left' };
+  if (root.right && root.right.value === targetValue) return { parent: root, side: 'right' };
+  return findParentLink(root.left, targetValue) || findParentLink(root.right, targetValue);
+}
+
+function findNodeByValue(root, value) {
+  if (!root) return null;
+  if (root.value === value) return root;
+  return findNodeByValue(root.left, value) || findNodeByValue(root.right, value);
+}
+
+// Rotates the node holding `value` (wherever it is in the tree) and
+// reattaches the result to that node's former parent slot (or tree.root).
+function rotateNodeAtValue(tree, value, direction) {
+  const t = tree.copy();
+  const link = findParentLink(t.root, value);
+  const node = link ? link.parent[link.side] : t.root;
+  const rotated = direction === 'right' ? t.rotateRight(node) : t.rotateLeft(node);
+  if (link) link.parent[link.side] = rotated;
+  else t.root = rotated;
+  return t;
+}
+
+// Builds [intermediate, ...subStep(s), final] plus the pivot value to
+// highlight at each step.
+function buildRealRotationSequence(intermediateTree, pivotValue, rotationType) {
+  const sequence = [intermediateTree];
+  const pivots = [pivotValue];
+
+  if (rotationType === 'LL') {
+    sequence.push(rotateNodeAtValue(intermediateTree, pivotValue, 'right'));
+    pivots.push(pivotValue);
+  } else if (rotationType === 'RR') {
+    sequence.push(rotateNodeAtValue(intermediateTree, pivotValue, 'left'));
+    pivots.push(pivotValue);
+  } else if (rotationType === 'LR') {
+    const leftChildValue = findNodeByValue(intermediateTree.root, pivotValue).left.value;
+    const t1 = rotateNodeAtValue(intermediateTree, leftChildValue, 'left');
+    sequence.push(t1);
+    pivots.push(leftChildValue);
+    sequence.push(rotateNodeAtValue(t1, pivotValue, 'right'));
+    pivots.push(pivotValue);
+  } else if (rotationType === 'RL') {
+    const rightChildValue = findNodeByValue(intermediateTree.root, pivotValue).right.value;
+    const t1 = rotateNodeAtValue(intermediateTree, rightChildValue, 'right');
+    sequence.push(t1);
+    pivots.push(rightChildValue);
+    sequence.push(rotateNodeAtValue(t1, pivotValue, 'left'));
+    pivots.push(pivotValue);
+  }
+  // 'None': sequence stays [intermediateTree] — nothing to rotate
+
+  return { sequence, pivots };
+}
+
+const ROTATION_STEP_DURATION_MS = 1100;
+
+const RealRotationAnimator = ({ intermediateTree, pivotValue, rotationType }) => {
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const timeoutsRef = React.useRef([]);
+
+  const { sequence, pivots } = React.useMemo(
+    () => (intermediateTree ? buildRealRotationSequence(intermediateTree, pivotValue, rotationType) : { sequence: [], pivots: [] }),
+    [intermediateTree, pivotValue, rotationType]
+  );
+
+  React.useEffect(() => () => timeoutsRef.current.forEach(clearTimeout), []);
+
+  if (!intermediateTree || sequence.length === 0) return null;
+
+  if (rotationType === 'None' || sequence.length === 1) {
+    return (
+      <div className="mt-4 text-center text-sm text-gray-500 bg-gray-50 rounded-lg py-3">
+        ⚖️ העץ נשאר מאוזן — לא נדרשה שום רוטציה.
+      </div>
+    );
+  }
+
+  const play = () => {
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+    setStepIdx(0);
+    setPlaying(true);
+    for (let i = 1; i < sequence.length; i++) {
+      timeoutsRef.current.push(setTimeout(() => setStepIdx(i), i * ROTATION_STEP_DURATION_MS));
+    }
+    timeoutsRef.current.push(setTimeout(() => setPlaying(false), sequence.length * ROTATION_STEP_DURATION_MS));
+  };
+
+  // Rotation never adds/removes values, so rank (x) is identical at every step
+  const sortedValues = sequence[0].toArray();
+  const n = sortedValues.length;
+  const SPACING = Math.max(55, Math.min(85, 480 / Math.max(n - 1, 1)));
+  const xMap = {};
+  sortedValues.forEach((v, i) => { xMap[v] = 30 + i * SPACING + SPACING / 2; });
+
+  const currentTree = sequence[stepIdx];
+  const LEVEL_H = 78;
+  const depthMap = {};
+  const assignDepth = (node, d) => {
+    if (!node) return;
+    depthMap[node.value] = d;
+    assignDepth(node.left, d + 1);
+    assignDepth(node.right, d + 1);
+  };
+  assignDepth(currentTree.root, 0);
+
+  const maxDepth = Math.max(0, ...Object.values(depthMap));
+  const svgWidth = n * SPACING + 60;
+  const svgHeight = maxDepth * LEVEL_H + 120;
+
+  const edges = [];
+  const collectEdges = (node) => {
+    if (!node) return;
+    const py = 40 + depthMap[node.value] * LEVEL_H;
+    if (node.left) {
+      edges.push({ key: `${node.value}-L`, x1: xMap[node.value], y1: py, x2: xMap[node.left.value], y2: 40 + depthMap[node.left.value] * LEVEL_H });
+      collectEdges(node.left);
+    }
+    if (node.right) {
+      edges.push({ key: `${node.value}-R`, x1: xMap[node.value], y1: py, x2: xMap[node.right.value], y2: 40 + depthMap[node.right.value] * LEVEL_H });
+      collectEdges(node.right);
+    }
+  };
+  collectEdges(currentTree.root);
+
+  const pivot = pivots[stepIdx];
+  const t = { transition: 'cx 0.6s ease, cy 0.6s ease, x 0.6s ease, y 0.6s ease, x1 0.6s ease, y1 0.6s ease, x2 0.6s ease, y2 0.6s ease' };
+  const stepCount = sequence.length;
+
+  return (
+    <div className="mt-4">
+      <div className="text-center mb-2">
+        <button
+          onClick={play}
+          disabled={playing}
+          className={`px-5 py-2 rounded-lg font-bold text-white text-sm transition ${
+            playing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800'
+          }`}
+        >
+          {playing ? '⏳ מנפיש...' : '▶ צפה בתהליך הרוטציה'}
+        </button>
+        <p className="text-xs text-gray-500 mt-2">
+          {stepIdx === 0
+            ? `לפני רוטציה — הצומת הצהוב (${pivot}) הוא הלא-מאוזן`
+            : stepCount === 2
+              ? 'אחרי הרוטציה — מאוזן!'
+              : stepIdx === 1
+                ? `שלב 1/2 — סיבוב סביב ${pivot}`
+                : 'שלב 2/2 — מאוזן!'}
+        </p>
+      </div>
+      <svg
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="bg-white rounded-lg border-2 border-indigo-200 w-full block mx-auto"
+        style={{ maxWidth: `${svgWidth}px`, height: 'auto' }}
+      >
+        {edges.map(e => (
+          <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" style={t} />
+        ))}
+        {sortedValues.map(v => {
+          const x = xMap[v];
+          const y = 40 + depthMap[v] * LEVEL_H;
+          const isPivot = v === pivot;
+          return (
+            <g key={v}>
+              <circle cx={x} cy={y} r="24" fill={isPivot ? '#fde68a' : '#e0e7ff'} stroke={isPivot ? '#d97706' : '#4f46e5'} strokeWidth={isPivot ? '3' : '2'} style={t} />
+              <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="14" fontWeight="bold" fill="#1f2937" style={t}>{v}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
 // ============= HELP MODAL (rotation cheat-sheet, reachable mid-game) =============
 const HelpModal = ({ onClose }) => (
   <div
@@ -719,6 +908,7 @@ export default function AVLTreeLearningApp() {
   const [operation, setOperation] = useState(null);
   const [operationValue, setOperationValue] = useState(null);
   const [correctRotationType, setCorrectRotationType] = useState(null);
+  const [pivotValue, setPivotValue] = useState(null);
   const [gamePhase, setGamePhase] = useState('rotation');
   const [isCorrect, setIsCorrect] = useState(null);
   const [explanation, setExplanation] = useState(null);
@@ -779,6 +969,7 @@ export default function AVLTreeLearningApp() {
     setOperationValue(value);
     setTreeIntermediate(intermediate);
     setCorrectRotationType(correct);
+    setPivotValue(unbalancedNode ? unbalancedNode.value : null);
     setGamePhase('rotation');
     setIsCorrect(null);
     setExplanation(null);
@@ -1097,11 +1288,10 @@ RL (Right-Left)
                   <TreeVisualization tree={treeAfter} title="אחרי (מאוזן)" />
                 </div>
 
-                <TreeTransitionAnimator
-                  fromTree={treeIntermediate}
-                  toTree={treeAfter}
-                  highlightValue={null}
-                  label="צפה בתיקון (הרוטציה בפעולה)"
+                <RealRotationAnimator
+                  intermediateTree={treeIntermediate}
+                  pivotValue={pivotValue}
+                  rotationType={correctRotationType}
                 />
 
                 <div className="text-center mt-6">
