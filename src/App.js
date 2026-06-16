@@ -197,11 +197,13 @@ const TreeVisualization = ({ tree, title, highlightValue = null }) => {
   assignCols(tree.root, 0);
 
   const n = col; // total node count
-  const LEVEL_H = 85;
+  const LEVEL_H = 80;
   // Spacing: at least 65px between node centers, scales down for large trees
   const SPACING = Math.max(65, Math.min(95, 520 / Math.max(n - 1, 1)));
-  const SVG_W = Math.max(580, n * SPACING + 60);
-  const SVG_H = maxDepth * LEVEL_H + 150;
+  // Low floor (not a fixed desktop width) so small trees don't force
+  // unnecessary horizontal scrolling on narrow phone screens
+  const SVG_W = Math.max(260, n * SPACING + 60);
+  const SVG_H = maxDepth * LEVEL_H + 140;
 
   // Step 2: convert col/depth → pixel coords
   const pos = {};
@@ -480,8 +482,8 @@ const RotationAnimator = () => {
       <h4 className="text-lg font-bold text-center text-gray-800 mb-1">{info.title}</h4>
       <p className="text-sm text-center text-gray-600 mb-4 max-w-xl mx-auto">{info.desc}</p>
 
-      <div className="flex justify-center mb-4">
-        <svg width={svgWidth} height={svgHeight} className="bg-white rounded-lg border-2 border-blue-200">
+      <div className="flex justify-center mb-4 overflow-x-auto">
+        <svg width={svgWidth} height={svgHeight} className="bg-white rounded-lg border-2 border-blue-200 flex-shrink-0">
           {edges.map(e => (
             <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#cbd5e1" strokeWidth="2" style={posTransition} />
           ))}
@@ -526,6 +528,55 @@ const RotationAnimator = () => {
   );
 };
 
+// ============= HELP MODAL (rotation cheat-sheet, reachable mid-game) =============
+const HelpModal = ({ onClose }) => (
+  <div
+    className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+    onClick={onClose}
+  >
+    <div
+      className="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 max-w-md w-full max-h-[85vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xl font-bold text-gray-800">❓ מדריך מהיר לרוטציות</h3>
+        <button
+          onClick={onClose}
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-lg"
+          aria-label="סגור"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="space-y-3 text-sm text-gray-700">
+        <div className="p-3 bg-blue-50 rounded-lg">
+          <p className="font-bold text-blue-900 mb-1">LL — שמאל-שמאל</p>
+          <p>אי-איזון מצד שמאל, שגם הוא נטוי שמאלה. תיקון: סיבוב ימינה יחיד.</p>
+        </div>
+        <div className="p-3 bg-blue-50 rounded-lg">
+          <p className="font-bold text-blue-900 mb-1">RR — ימין-ימין</p>
+          <p>אי-איזון מצד ימין, שגם הוא נטוי ימינה. תיקון: סיבוב שמאלה יחיד.</p>
+        </div>
+        <div className="p-3 bg-purple-50 rounded-lg">
+          <p className="font-bold text-purple-900 mb-1">LR — שמאל-ימין</p>
+          <p>אי-איזון מצד שמאל, אבל הבן השמאלי נטוי ימינה. תיקון: סיבוב שמאלה ואז ימינה (כפול).</p>
+        </div>
+        <div className="p-3 bg-purple-50 rounded-lg">
+          <p className="font-bold text-purple-900 mb-1">RL — ימין-שמאל</p>
+          <p>אי-איזון מצד ימין, אבל הבן הימני נטוי שמאלה. תיקון: סיבוב ימינה ואז שמאלה (כפול).</p>
+        </div>
+        <div className="p-3 bg-green-50 rounded-lg">
+          <p className="font-bold text-green-900 mb-1">None — אין רוטציה</p>
+          <p>העץ נשאר מאוזן (|BF| ≤ 1 בכל הצמתים) — אין צורך לתקן כלום.</p>
+        </div>
+      </div>
+      <p className="text-xs text-gray-400 mt-4 text-center">
+        טיפ: בעץ "אחרי הפעולה" הצומת המסומן באדום הוא המקום שבו קרה חוסר האיזון.
+      </p>
+    </div>
+  </div>
+);
+
 // ============= MAIN APP =============
 const EMPTY_STATS = {
   LL: { total: 0, correct: 0 },
@@ -557,6 +608,7 @@ export default function AVLTreeLearningApp() {
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [rotationStats, setRotationStats] = useState(EMPTY_STATS);
   const [showStats, setShowStats] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const generateTree = (diff = difficulty) => {
     const tree = new AVLTree();
@@ -728,32 +780,37 @@ RL (Right-Left)
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 md:p-6" dir="rtl">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 mb-2">
+        <div className="text-center mb-8 sm:mb-10">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 mb-2">
             🌳 AVL Tree Master 🌳
           </h1>
-          <p className="text-gray-600 text-base">למד ותרגל עצי AVL בצורה אינטראקטיבית</p>
+          <p className="text-gray-600 text-sm sm:text-base">למד ותרגל עצי AVL בצורה אינטראקטיבית</p>
         </div>
 
         {/* MENU */}
         {mode === 'menu' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-            <button
-              onClick={() => setMode('learning')}
-              className="p-8 bg-white rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition border-4 border-blue-300"
-            >
-              <div className="text-4xl mb-4">📚</div>
-              <h3 className="text-2xl font-bold text-blue-900 mb-2">מצב למידה</h3>
-              <p className="text-gray-600">הסברים על AVL, Balance Factor ורוטציות</p>
-            </button>
-            <button
-              onClick={() => setMode('gameStart')}
-              className="p-8 bg-white rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition border-4 border-green-300"
-            >
-              <div className="text-4xl mb-4">🎮</div>
-              <h3 className="text-2xl font-bold text-green-900 mb-2">מצב משחק</h3>
-              <p className="text-gray-600">זהה את הרוטציה הנדרשת וצבור נקודות</p>
-            </button>
+          <div className="max-w-2xl mx-auto">
+            <p className="text-center text-gray-500 text-sm mb-6">
+              💡 חדש כאן? מומלץ להתחיל ב"מצב למידה" ולעבור ל"מצב משחק" לתרגול.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <button
+                onClick={() => setMode('learning')}
+                className="p-6 sm:p-8 bg-white rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition border-4 border-blue-300"
+              >
+                <div className="text-4xl mb-4">📚</div>
+                <h3 className="text-2xl font-bold text-blue-900 mb-2">מצב למידה</h3>
+                <p className="text-gray-600">הסברים על AVL, Balance Factor ורוטציות</p>
+              </button>
+              <button
+                onClick={() => setMode('gameStart')}
+                className="p-6 sm:p-8 bg-white rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition border-4 border-green-300"
+              >
+                <div className="text-4xl mb-4">🎮</div>
+                <h3 className="text-2xl font-bold text-green-900 mb-2">מצב משחק</h3>
+                <p className="text-gray-600">זהה את הרוטציה הנדרשת וצבור נקודות</p>
+              </button>
+            </div>
           </div>
         )}
 
@@ -791,7 +848,11 @@ RL (Right-Left)
             <button onClick={() => setMode('menu')} className="mb-6 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
               ← חזור לתפריט
             </button>
-            <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">בחר רמת קושי</h2>
+            <h2 className="text-3xl font-bold text-gray-800 mb-3 text-center">בחר רמת קושי</h2>
+            <p className="text-center text-gray-600 mb-6 max-w-lg mx-auto text-sm sm:text-base">
+              בכל שאלה תראה עץ AVL לפני ואחרי פעולת הוספה או הסרה. המשימה שלך:
+              לבחור איזו רוטציה (אם בכלל) נדרשת כדי להחזיר את העץ לאיזון.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 { diff: 'Beginner',     emoji: '🌱', label: 'מתחיל',  desc: '4–6 צמתים' },
@@ -809,7 +870,7 @@ RL (Right-Left)
                     setShowStats(false);
                     startGame(diff);
                   }}
-                  className={`p-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition border-4 ${
+                  className={`p-6 sm:p-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition border-4 ${
                     difficulty === diff
                       ? 'bg-gradient-to-br from-yellow-300 to-orange-300 border-orange-500'
                       : 'bg-white border-gray-200'
@@ -828,7 +889,7 @@ RL (Right-Left)
         {mode === 'gaming' && (
           <div className="max-w-6xl mx-auto">
             {/* Score bar */}
-            <div className="grid grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               {[
                 { label: 'ניקוד',  value: score,            color: 'text-blue-600' },
                 { label: 'קומבו',  value: `${combo}🔥`,    color: 'text-green-600' },
@@ -839,9 +900,9 @@ RL (Right-Left)
                   color: 'text-orange-600',
                 },
               ].map(({ label, value, color }) => (
-                <div key={label} className="bg-white p-4 rounded-lg shadow text-center">
+                <div key={label} className="bg-white p-3 sm:p-4 rounded-lg shadow text-center">
                   <p className="text-xs text-gray-500 mb-1">{label}</p>
-                  <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                  <p className={`text-xl sm:text-2xl font-bold ${color}`}>{value}</p>
                 </div>
               ))}
             </div>
@@ -870,13 +931,22 @@ RL (Right-Left)
                 </div>
 
                 <div className="text-center">
-                  <p className="text-lg font-bold text-gray-800 mb-4">איזו רוטציה נדרשת?</p>
-                  <div className="flex flex-wrap justify-center gap-3">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <p className="text-lg font-bold text-gray-800">איזו רוטציה נדרשת?</p>
+                    <button
+                      onClick={() => setShowHelp(true)}
+                      className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-sm"
+                      aria-label="עזרה — מה זה אומר?"
+                    >
+                      ?
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
                     {['LL', 'RR', 'LR', 'RL', 'None'].map(rot => (
                       <button
                         key={rot}
                         onClick={() => handleRotationSelect(rot)}
-                        className="px-6 py-3 bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-xl hover:from-blue-600 hover:to-blue-800 font-bold text-lg transform hover:scale-110 transition shadow-md"
+                        className="min-w-[64px] px-4 sm:px-6 py-3 bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-xl hover:from-blue-600 hover:to-blue-800 active:scale-95 font-bold text-base sm:text-lg transform hover:scale-110 transition shadow-md"
                       >
                         {rot}
                       </button>
@@ -911,23 +981,31 @@ RL (Right-Left)
             )}
 
             {/* Bottom bar */}
-            <div className="flex justify-between items-center mt-6">
-              <button onClick={() => setMode('menu')} className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm">
+            <div className="flex flex-wrap justify-between items-center gap-2 mt-6">
+              <button onClick={() => setMode('menu')} className="px-4 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm">
                 ← חזור לתפריט
               </button>
-              <button
-                onClick={() => setShowStats(s => !s)}
-                className="px-5 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-bold text-sm"
-              >
-                {showStats ? '✕ סגור סטטיסטיקות' : '📊 סטטיסטיקות'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowHelp(true)}
+                  className="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-bold text-sm"
+                >
+                  ❓ עזרה
+                </button>
+                <button
+                  onClick={() => setShowStats(s => !s)}
+                  className="px-4 py-2.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-bold text-sm"
+                >
+                  {showStats ? '✕ סגור סטטיסטיקות' : '📊 סטטיסטיקות'}
+                </button>
+              </div>
             </div>
 
             {/* Stats panel */}
             {showStats && (
-              <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
+              <div className="mt-6 bg-white rounded-2xl shadow-xl p-4 sm:p-6">
                 <h3 className="text-xl font-bold mb-4 text-center">📊 ביצועים לפי סוג רוטציה</h3>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   {['LL', 'RR', 'LR', 'RL', 'None'].map(rot => {
                     const s = rotationStats[rot];
                     const pct = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
@@ -949,6 +1027,8 @@ RL (Right-Left)
           </div>
         )}
       </div>
+
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
